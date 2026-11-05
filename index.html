@@ -87,7 +87,7 @@ canvas{display:block;image-rendering:crisp-edges;image-rendering:pixelated;touch
   <header class="top">
     <h1>雪吻</h1>
     <div class="right">
-      <span>最高<b id="best">0</b></span>
+      <span>无尽最高<b id="best">0</b></span>
       <button id="snd" class="px mini" type="button" aria-pressed="true">声音 开</button>
     </div>
   </header>
@@ -101,8 +101,9 @@ canvas{display:block;image-rendering:crisp-edges;image-rendering:pixelated;touch
           <p class="kicker">SNOW KISS</p>
           <h2 class="big">雪吻</h2>
           <p class="line">两片雪花，落地之前，让它们相遇。</p>
-          <p class="line dim">走到雪花下面，按住呼气，暖气会把雪花拉向你。</p>
+          <p class="line dim">走到雪花下面，按住呼气，暖气会把雪花拉向你。吻满四次，迎来结局。</p>
           <button id="startBtn" class="px hot go" type="button">开始</button>
+          <button id="endlessBtn" class="px go" type="button">无尽模式</button>
         </div>
         <div class="panel" id="ovOver" hidden>
           <p class="kicker">GAME OVER</p>
@@ -116,7 +117,7 @@ canvas{display:block;image-rendering:crisp-edges;image-rendering:pixelated;touch
           <h2 class="big">雪停了</h2>
           <p class="line">两片雪花落在发梢上，没有化。</p>
           <p class="line dim">天亮了　雪吻 <b id="ovWinScore">10</b> 次</p>
-          <button id="continueBtn" class="px hot go" type="button">继续下雪</button>
+          <button id="continueBtn" class="px hot go" type="button">无尽模式</button>
           <button id="winAgainBtn" class="px go" type="button">再玩一次</button>
         </div>
       </div>
@@ -134,7 +135,7 @@ canvas{display:block;image-rendering:crisp-edges;image-rendering:pixelated;touch
 <script>
 (function(){
 'use strict';
-const W=96,H=144,GY=128,HEADY=GY-19,CONE0=11,PULL=4.2,SP=44,WIN=10;
+const W=96,H=144,GY=128,HEADY=GY-19,CONE0=11,PULL=4.2,SP=44,WIN=4;
 const $=id=>document.getElementById(id);
 const cv=$('c'),ctx=cv.getContext('2d'),stage=$('stage'),frame=$('frame'),overlay=$('overlay'),toastEl=$('toast');
 ctx.imageSmoothingEnabled=false;
@@ -149,7 +150,8 @@ const FONT={
 '4':['101','101','111','001','001'],'5':['111','100','111','001','111'],
 '6':['111','100','111','101','111'],'7':['111','001','010','010','010'],
 '8':['111','101','111','101','111'],'9':['111','101','111','001','111'],
-'L':['100','100','100','100','111'],'V':['101','101','101','101','010']
+'L':['100','100','100','100','111'],'V':['101','101','101','101','010'],
+'I':['111','010','010','010','111'],'U':['101','101','101','101','111']
 };
 function blit(c,rows,pal,x,y){
   for(let r=0;r<rows.length;r++){const row=rows[r];
@@ -161,6 +163,11 @@ function txt(s,x,y,col){
     for(let r=0;r<5;r++)for(let c=0;c<3;c++)if(g[r][c]==='1')ctx.fillRect(x+i*4+c,y+r,1,1);}
 }
 const txtS=(s,x,y,col)=>{txt(s,x+1,y+1,'#070a22');txt(s,x,y,col);};
+function bigTxt(s,x,y,sc,col){
+  ctx.fillStyle=col;
+  for(let i=0;i<s.length;i++){const g=FONT[s[i]];if(!g)continue;
+    for(let r=0;r<5;r++)for(let c=0;c<3;c++)if(g[r][c]==='1')ctx.fillRect(x+i*4*sc+c*sc,y+r*sc,sc,sc);}
+}
 
 /* ---------- sprites ---------- */
 const HERO_PAL={H:'#f6c945',h:'#ffe58a',d:'#d49a22',S:'#ffdcc4',P:'#ff9fb0',E:'#35264f',m:'#c8505f',
@@ -308,7 +315,7 @@ function startMusic(){
 
 /* ---------- game state ---------- */
 const S={state:'title',t:0,lives:3,kisses:0,level:1,flakes:[],spawnIn:0,over:0,best:0,
-  won:false,win:0,winDone:false,landed:false,dawn:0,pair:[]};
+  won:false,mode:'story',fw:0,win:0,winDone:false,landed:false,dawn:0,pair:[]};
 try{S.best=parseInt(localStorage.getItem('snowkiss.best')||'0',10)||0;}catch(e){}
 $('best').textContent=S.best;
 const hero={x:W/2,face:1,pony:-1,sway:0,walkT:0,moving:false,emo:'',emoT:0,hop:0,blink:0,blinkT:2.5,
@@ -353,7 +360,7 @@ function kiss(a,b){
   const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
   S.kisses++;
   const lv=1+Math.floor(S.kisses/3),up=lv>S.level;S.level=lv;
-  if(S.kisses>S.best){S.best=S.kisses;saveBest();}
+  if(S.mode==='endless'&&S.kisses>S.best){S.best=S.kisses;saveBest();}
   burst(mx,my,['#ffffff','#ffd0e0','#bfe7ff','#fff3c4'],22,18,48);
   fx.push({type:'ring',x:mx,y:my,life:0.7,max:0.7});
   fx.push({type:'heart',x:mx,y:my-4,vy:-14,life:1.3,max:1.3});
@@ -380,20 +387,34 @@ function melt(f){
 }
 
 function startWin(mx,my){
-  S.won=true;S.state='win';S.win=0;S.winDone=false;S.landed=false;S.dawn=0;S.spawnIn=0;
+  S.won=true;S.state='win';S.win=0;S.winDone=false;S.landed=false;S.dawn=0;S.spawnIn=0;S.fw=0.3;
   S.pair=[{x:mx-3,y:my,sx:mx-3,sy:my,kind:'pink',ph:0},{x:mx+3,y:my,sx:mx+3,sy:my,kind:'ice',ph:1.3}];
   hero.emo='happy';hero.emoT=99;
   [523,659,784,1046,784,1046,1318].forEach((f,i)=>tone(f,0.5+i*0.22,0.5,'triangle',0.1));
 }
+function fwLaunch(){
+  const x=rand(10,W-10),sy=88,ty=rand(24,54),sp=rand(55,75);
+  fx.push({type:'rocket',back:true,x,y:sy,vx:rand(-3,3),vy:-sp,life:(sy-ty)/sp,max:1,onEnd:e=>fwBurst(e.x,e.y)});
+}
+function fwBurst(x,y){
+  const sets=[['#ffd0e0','#ff9ab0','#ffffff'],['#fff3c4','#ffd26a','#ffffff'],['#bfe7ff','#7fc8ff','#ffffff']];
+  const cols=sets[Math.floor(Math.random()*sets.length)],n=30;
+  for(let i=0;i<n;i++){
+    const a=i/n*6.283+rand(-0.05,0.05),sp=rand(22,34),life=rand(1,1.5);
+    fx.push({type:'p',back:true,x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,drag:1.4,g:14,life,max:life,sz:i%5===0?2:1,col:cols[i%3]});
+  }
+  tone(rand(160,300),0,0.2,'sawtooth',0.025);
+}
 function updWin(dt){
   S.win+=dt;S.dawn=clamp((S.win-0.8)/6,0,1);
+  if(S.win>1.3){S.fw-=dt;if(S.fw<=0){S.fw=rand(0.35,0.8);fwLaunch();}}
   const k=clamp((S.win-1.2)/2.8,0,1),e=k*k*(3-2*k);
   S.pair.forEach((f,i)=>{
     const tx=rnd(hero.x)+(i?2:-3),ty=GY-17;
     f.x=f.sx+(tx-f.sx)*e;f.y=f.sy+(ty-f.sy)*e-Math.sin(k*Math.PI)*12;
   });
   if(k>=1&&!S.landed){S.landed=true;burst(rnd(hero.x),GY-17,['#ffffff','#ffd0e0','#bfe7ff'],14,8,24);}
-  if(S.win>=9&&!S.winDone){
+  if(S.win>=10&&!S.winDone){
     S.winDone=true;$('ovWinScore').textContent=S.kisses;
     $('ovTitle').hidden=true;$('ovOver').hidden=true;$('ovWin').hidden=false;
     overlay.classList.add('soft');overlay.hidden=false;
@@ -401,6 +422,7 @@ function updWin(dt){
   }
 }
 function continueGame(){
+  S.mode='endless';
   S.state='play';S.lives=3;S.flakes=[];S.spawnIn=0.7;S.win=0;S.dawn=0;S.pair=[];
   hero.emo='';hero.emoT=0;hero.breath=100;hero.locked=false;
   gust.dur=0;gust.next=3;
@@ -496,7 +518,7 @@ function updAmb(dt){
 function updFx(dt){
   for(let i=fx.length-1;i>=0;i--){
     const e=fx[i];e.life-=dt;
-    if(e.life<=0){fx.splice(i,1);continue;}
+    if(e.life<=0){fx.splice(i,1);if(e.onEnd)e.onEnd(e);continue;}
     if(e.vx!==undefined)e.x+=e.vx*dt;
     if(e.vy!==undefined){e.y+=e.vy*dt;if(e.g)e.vy+=e.g*dt;}
     if(e.drag){const k=Math.max(0,1-e.drag*dt);e.vx*=k;e.vy*=k;}
@@ -526,10 +548,14 @@ function update(dt){
 const BEHIND={foot:1,streak:1};
 function drawFx(front){
   for(const e of fx){
-    if(!!BEHIND[e.type]===front)continue;
+    if(!!(BEHIND[e.type]||e.back)===front)continue;
     const a=clamp(e.life/e.max,0,1);
     switch(e.type){
       case 'p':ctx.globalAlpha=a;ctx.fillStyle=e.col;ctx.fillRect(rnd(e.x),rnd(e.y),e.sz,e.sz);break;
+      case 'rocket':
+        ctx.fillStyle='#fff3c4';ctx.globalAlpha=1;ctx.fillRect(rnd(e.x),rnd(e.y),1,1);
+        ctx.globalAlpha=0.5;ctx.fillRect(rnd(e.x),rnd(e.y)+2,1,1);
+        ctx.globalAlpha=0.25;ctx.fillRect(rnd(e.x),rnd(e.y)+4,1,1);break;
       case 'foot':ctx.globalAlpha=Math.min(1,a*1.5)*0.8;ctx.fillStyle='#44558f';ctx.fillRect(rnd(e.x),GY+2,2,1);break;
       case 'streak':ctx.globalAlpha=0.32*a;ctx.fillStyle='#ffffff';ctx.fillRect(e.dir>0?rnd(e.x):rnd(e.x)-4,rnd(e.y),4,1);break;
       case 'puddle':ctx.globalAlpha=Math.min(1,a*2);ctx.fillStyle='#cfe6ff';
@@ -602,6 +628,14 @@ function drawWin(){
     }
     ctx.globalAlpha=1;
   }
+  if(S.win>3.2){
+    const a=clamp(S.win-3.2,0,1),str='I LUV U',sc=2,w=(str.length*4-1)*sc;
+    const cx=clamp(rnd(hero.x),w/2+3,W-w/2-3),x0=rnd(cx-w/2),y0=36;
+    ctx.globalAlpha=a;
+    bigTxt(str,x0+1,y0+1,sc,'#5a1f4e');
+    bigTxt(str,x0,y0,sc,Math.floor(S.t*4)%2?'#fff3c4':'#ffffff');
+    ctx.globalAlpha=1;
+  }
   if(!S.landed){for(const f of S.pair)drawFlake(f,true);}
   else for(const f of S.pair){
     const x=rnd(f.x),y=rnd(f.y);
@@ -650,10 +684,11 @@ function render(){
 }
 
 /* ---------- flow ---------- */
-function startGame(){
+function startGame(mode){
+  S.mode=mode||S.mode||'story';
   initAudio();startMusic();
   S.state='play';S.lives=3;S.kisses=0;S.level=1;S.flakes=[];S.spawnIn=0.7;S.over=0;
-  S.won=false;S.win=0;S.dawn=0;S.pair=[];
+  S.won=S.mode==='endless';S.win=0;S.dawn=0;S.pair=[];
   for(const p of amb)if(p.y>H)p.y=rand(0,GY);
   hero.x=W/2;hero.lastFoot=W/2;hero.breath=100;hero.locked=false;hero.emo='';hero.emoT=0;hero.hop=0;
   gust.dur=0;gust.next=3;fx.length=0;
@@ -662,10 +697,10 @@ function startGame(){
 }
 function endGame(){
   S.state='over';
-  if(S.kisses>S.best){S.best=S.kisses;saveBest();}
+  if(S.mode==='endless'&&S.kisses>S.best){S.best=S.kisses;saveBest();}
   const n=S.kisses;
   $('ovScore').textContent=n;
-  $('ovNote').textContent=(n===0?'雪花还没学会靠近。':n<3?'至少有两片雪花吻到了。':n<8?'今晚的雪比刚才暖了一点。':'整个冬天都被你吻暖了。')+'　最高 '+S.best;
+  $('ovNote').textContent=(n===0?'雪花还没学会靠近。':n<3?'至少有两片雪花吻到了。':n<8?'今晚的雪比刚才暖了一点。':'整个冬天都被你吻暖了。')+(S.mode==='endless'?'　最高 '+S.best:'');
   sfx('over');
   $('ovTitle').hidden=true;$('ovWin').hidden=true;$('ovOver').hidden=false;
   overlay.classList.remove('soft');overlay.hidden=false;
@@ -710,7 +745,7 @@ window.addEventListener('keydown',e=>{
   if(S.state!=='play'){
     if((k==='Space'||k==='Enter')&&!(e.target&&e.target.tagName==='BUTTON')){
       e.preventDefault();
-      if(S.state==='title'||S.state==='over'||(S.state==='win'&&S.winDone))startGame();
+      if(S.state==='title'||S.state==='over'||(S.state==='win'&&S.winDone))startGame(S.state==='over'?S.mode:'story');
     }
     return;
   }
@@ -727,10 +762,11 @@ window.addEventListener('keyup',e=>{
 });
 window.addEventListener('blur',()=>{kb.l=kb.r=kb.b=false;pad.l=pad.r=pad.b=false;ptr.on=false;});
 
-$('startBtn').addEventListener('click',startGame);
+$('startBtn').addEventListener('click',()=>startGame('story'));
+$('endlessBtn').addEventListener('click',()=>startGame('endless'));
 $('continueBtn').addEventListener('click',continueGame);
-$('winAgainBtn').addEventListener('click',startGame);
-$('againBtn').addEventListener('click',startGame);
+$('winAgainBtn').addEventListener('click',()=>startGame('story'));
+$('againBtn').addEventListener('click',()=>startGame(S.mode));
 $('snd').addEventListener('click',e=>{
   soundOn=!soundOn;initAudio();
   e.currentTarget.textContent=soundOn?'声音 开':'声音 关';
